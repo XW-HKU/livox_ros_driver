@@ -1,0 +1,14 @@
+{
+    "hub_config": {
+        "broadcast_code": "13ULG68004000H0",
+        "enable_connect": true,
+        "coordinate": 0
+    },
+    "lidar_config": [
+        {
+            "broadcast_code": "3JEDH9900101111",
+            "return_mode": 0,
+            "imu_rate": 1
+        }
+    ]
+}
