@@ -375,7 +375,8 @@ void Lddc::FillPointsToCustomMsg(livox_ros_driver::CustomMsg& livox_msg, \
   }
 }
 
-uint64_t cur_lidar_time = 0;
+uint64_t cur_lidar_time     = -1;
+double   cur_lidar_time_sec = -1;
 
 uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
                                        uint32_t packet_num, uint8_t handle) {
@@ -411,8 +412,6 @@ uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
     LivoxEthPacket *raw_packet =
         reinterpret_cast<LivoxEthPacket *>(storage_packet.raw_data);
     timestamp = GetStoragePacketTimestamp(&storage_packet, data_source);
-    // std::cout<<"lid raw_packet->timestamp_type: "<<+(raw_packet->timestamp_type) \
-    // <<" time: "<<timestamp / 1000000000.0 - 1.638e9<<std::endl;
     int64_t packet_gap = timestamp - last_timestamp;
     if ((packet_gap > lidar->packet_interval_max) &&
         lidar->data_is_pubulished) {
@@ -420,8 +419,6 @@ uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
       // packet_gap);
       if (kSourceLvxFile != data_source) {
         timestamp = last_timestamp + lidar->packet_interval;
-        // std::cout<<"lid: last_timestamp: "<<last_timestamp<<" lidar->packet_interval: " \
-        <<lidar->packet_interval<<std::endl;
         ZeroPointDataOfStoragePacket(&storage_packet);
         is_zero_packet = 1;
       }
@@ -431,12 +428,10 @@ uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
       livox_msg.timebase = timestamp;
       packet_offset_time = 0;
       /** convert to ros time stamp */
-      livox_msg.header.stamp = ros::Time(timestamp / 1000000000.0);
-      // printf("!!!!! lid time: %.6lf data_source: %d \n", double(timestamp / 1000000000.0 - 1.638e9), data_source);
       cur_lidar_time = timestamp;
-    }
-    else
-    {
+      cur_lidar_time_sec = timestamp / 1000000000.0;
+      livox_msg.header.stamp = ros::Time(timestamp / 1000000000.0);
+    } else {
       packet_offset_time = (uint32_t)(timestamp - livox_msg.timebase);
     }
     uint32_t single_point_num = storage_packet.point_num * echo_num;
@@ -469,7 +464,6 @@ uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
 
     livox_msg.point_num += single_point_num;
     last_timestamp = timestamp;
-    
     ++published_packet;
   }
 
@@ -489,7 +483,7 @@ uint32_t Lddc::PublishCustomPointcloud(LidarDataQueue *queue,
   return published_packet;
 }
 
-static uint64_t time_off = 0.0;
+double last_imu_time_sec = -1;
 
 uint32_t Lddc::PublishImuData(LidarDataQueue *queue, uint32_t packet_num,
                               uint8_t handle) {
@@ -504,21 +498,34 @@ uint32_t Lddc::PublishImuData(LidarDataQueue *queue, uint32_t packet_num,
   QueuePrePop(queue, &storage_packet);
   LivoxEthPacket *raw_packet =
       reinterpret_cast<LivoxEthPacket *>(storage_packet.raw_data);
-  
   timestamp = GetStoragePacketTimestamp(&storage_packet, data_source);
-  // std::cout<<"imu raw_packet->timestamp_type: "<<+(raw_packet->timestamp_type)
-  // <<" time: "<<timestamp / 1000000000.0 - 1.638e9<<std::endl;
-  if (timestamp >= 0) {
-    uint64_t time_d = cur_lidar_time - timestamp;
-    if (cur_lidar_time > timestamp && time_d > 500000000)
+  double timestamp_sec = timestamp / 1000000000.0;
+  if (timestamp >= 0 && cur_lidar_time_sec > 0.0)
+  {
+    
+    if (cur_lidar_time_sec > timestamp_sec + 0.5)
     {
-        timestamp += (time_d / 1000000000 + 1) * 1000000000;
+      uint64_t time_d = cur_lidar_time - timestamp;
+      timestamp_sec += (time_d / 1000000000 + 1.0);
     }
-    imu_data.header.stamp =
-        ros::Time(timestamp / 1000000000.0);  // to ros time stamp
+    else if (cur_lidar_time_sec < timestamp_sec - 0.5)
+    {
+      int64_t time_d = timestamp - cur_lidar_time;
+      timestamp_sec -= (time_d / 1000000000 + 1.0);
+    }
+    else
+    {
+      timestamp_sec = timestamp_sec;
+    }
+
+    // if (timestamp > last_imu_time + 1000000000)
+    // {
+    //   timestamp -= 1000000000;
+    // }
     
-    // printf("imu time: %.6lf cur_lidar_time: %.6lf delta t: %.6lf \n", double(timestamp / 1000000000.0 - 1.638e9), double(cur_lidar_time / 1000000000.0 - 1.638e9), double((cur_lidar_time - timestamp) / 1000000000.0));
-    
+    imu_data.header.stamp = ros::Time(timestamp_sec);  // to ros time stamp
+
+    last_imu_time_sec = timestamp_sec;
   }
 
   uint8_t point_buf[2048];
