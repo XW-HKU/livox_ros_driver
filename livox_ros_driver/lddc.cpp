@@ -518,6 +518,10 @@ uint32_t Lddc::PublishImuData(LidarDataQueue *queue, uint32_t packet_num,
       timestamp_sec = timestamp_sec;
     }
 
+    double t_diff = cur_lidar_time_sec - timestamp_sec;
+    if (t_diff > 0.5)  timestamp_sec += 1.0;
+    if (t_diff < -0.5) timestamp_sec -= 1.0;
+
     // if (timestamp > last_imu_time + 1000000000)
     // {
     //   timestamp -= 1000000000;
